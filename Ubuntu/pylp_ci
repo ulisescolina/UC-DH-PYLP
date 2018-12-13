@@ -1,0 +1,78 @@
+#!/bin/bash
+
+# Este script reune lo necesario para compilar/interpretar
+# archivo de codigo fuente que involucre lo siguiente:
+## OpenMPI en C++
+## OpenMP en C++
+## Haskell
+## Prolog
+
+oridir=$(pwd)
+
+# Parametros
+# @param $1 archivo con el codigo fuente
+archivo=$(readlink -f "$1")
+base="${archivo%.*}"
+# @param $2 OpenMPI: cantidad de procesos a lanzar para la tarea
+#						[exclusivo para OpenMPI, se ignora en los otros casos]
+mpi_np=${2}
+
+# Manipulacion de directorios para poder trabajar los fuentes
+# de manera local
+dir=$(dirname "$archivo")
+cd "$dir" || exit
+
+# Compila codigo OpenMPI y lo ejecuta con la cantidad de recursos que se le soliciten
+compi() {\
+	if [[ $mpi_np != "" ]];
+	then
+		if [[ $mpi_np =~ ([0-9]+) ]];
+		then
+			nproc=${BASH_REMATCH};
+		else
+			echo "-----------------------------------------------------------------------------"
+			echo "Advertencia: El segundo argumento necesita ser numerico."
+			echo "        Este argumento representa la cantidad de procesos que se lanzaran"
+			echo "        luego de la compilacion del codigo Open MPI."
+			echo "        El script no pudo transformar la informacion provista a un valor"
+			echo "        numerico."
+			echo
+			echo "        Ejemplo:"
+			echo "          pylp_ci archivo_mpi.cpp 6 <-- Luego de la compilacion, lanzara 6"
+			echo "                                        procesos para que ejecuten el codigo"
+			echo "                                        compilado."
+			echo "-----------------------------------------------------------------------------"
+			echo
+			echo "Se lanzaran 2 procesos por defecto."
+			echo
+			nproc=2;
+		fi
+	else
+		nproc=2;
+	fi
+	echo "Compilando el archivo hacia: $base"
+	mpicxx -std=c++11 "$archivo" -o "$base"
+	echo "Corriendo $base con $nproc proceso(s)"
+	echo
+	echo "============ Inicio Ejecucion ================="
+	mpirun --oversubscribe -np "$nproc" "$base"
+	echo "============== Fin Ejecucion==================="
+	}
+
+# Compila codigo con flags para OpenMP, luego lo ejecuta
+comp(){
+	g++ -fopenmp -std=c++11 "$archivo" -o "$base" && "$base"
+}
+
+# Ejecucion del script
+case "$archivo" in
+	*.hs) ghci $archivo ;;
+	*.pl) swipl $archivo ;;
+	*_mpi.cpp) compi $archivo $base $mpi_np;;
+	*_mp.cpp) comp $archivo $base ;;
+	*) echo -e "Argumentos para pylp_ci:\\n\\t- *.hs\\t\\tInicia el interprete de Haskell en modo interactivo [GHC].\\n\\t- *.pl\\t\\tInicia el interprete de Prolog en modo interactivo [Swi-Prolog].\\n\\t- *_mpi.cpp\\tCompila el codigo para OpenMpi, luego lanza 2 procesos [por defecto] para la ejecucion de lo compilado,\\n\\t\\t\\tse puede pasar un segundo argumento con la cantidad de procesos que se le quieran solicitar.\\n\\t\\t\\tEjemplo:\\n\\t\\t\\t\\tpylp_ci ejemplo_mpi.cpp 6\\n\\t- *_mp.cpp\\tCompila el codigo con los flags necesarios para OpenMP, luego ejecuta el resultado.\\nTener en cuenta que * representa una cadena de caracteres."
+esac
+
+# Se deshace lo que se hace en la manipulacion de directorios
+# para el trabajo local
+cd "$oridir" || exit
